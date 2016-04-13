@@ -1,28 +1,24 @@
-#### header ####
-## basic arguments
 get_args <- function() {
     suppressMessages(library(argparse))
     
     p <- ArgumentParser(formatter_class='argparse.RawTextHelpFormatter')
     p$add_argument("-f", "--freeze", type="character", nargs=1,
-                   default="hg18",
-                   help="hg18, etc")
+        default="hg18", help="hg18, etc")
     p$add_argument("-p", "--patient", type="character", nargs=1,
-                   default="pFR03",
-                   help="subject name, pFR03")
+        required=TRUE, help="subject name, e.g. pFR03")
     p$add_argument("-t", "--time", type="character", nargs=1,
-                   default="m12",
-                   help="time, m12")
+        default="all", help="time, e.g. m12, all for all timepoints")
     p$add_argument("-c", "--cell", type="character", nargs=1,
-                   default="all",
-                   help="cell type, all")
+        default="all", help="cell type, e.g. Tcell, all for all cell types")
     p$add_argument("-g", "--group", type="character", nargs=1,
-                   default="intsites_miseq.read",
-                   help="mysql groupname, intsites_miseq.read")
+        #default="intsites_miseq.read", 
+        #default="intsitesdb.read", 
+        default="dryga-test-db", 
+        help="mysql groupname")
     
-    args <- p$parse_args(commandArgs(trailingOnly=TRUE))
-    return(args)
+    p$parse_args(commandArgs(trailingOnly=TRUE))
 }
+
 args <- get_args()
 print(t(as.data.frame(args)), quote=FALSE)
 
@@ -47,7 +43,8 @@ if( interactive() ) wideScreen()
 ## initialize connection to database
 ## ~/.my.cnf must be present
 null <- sapply(dbListConnections(MySQL()), dbDisconnect)
-dbConn <- dbConnect(MySQL(), default.file="./dot.my.cnf", group=args$group) 
+#dbConn <- dbConnect(MySQL(), default.file="~/.my.cnf", group=args$group) 
+dbConn <- dbConnect(MySQL(), default.file="~/.my.cnf", group="intsitesdb.read")
 stopifnot(dbGetQuery(dbConn, "SELECT 1")==1)
 
 ## get sampleInfo from specimen_management.gtsp
@@ -67,7 +64,7 @@ patientInfo <- (dplyr::select(sampleInfo,
                               vcn,
                               sampleprepmethod,
                               seqmethod) %>%
-                dplyr::filter(timepoint %in% args$time) %>%
+                dplyr::filter(timepoint %in% args$time | "all" %in% args$time) %>%
                 dplyr::filter(celltype %in% args$cell | "all" %in% args$cell) )
 
 similarGTSP <- sprintf("'^(%s)'",
@@ -83,6 +80,10 @@ ON pcrbreakpoints.siteID = sites.siteID
 WHERE samples.sampleName REGEXP %s AND
 samples.refGenome = '%s' ;", similarGTSP, args$freeze)
 message(sql)
+
+null <- sapply(dbListConnections(MySQL()), dbDisconnect)
+dbConn <- dbConnect(MySQL(), default.file="~/.my.cnf", group=args$group) 
+
 sites.uniq <- suppressWarnings( dbGetQuery(dbConn, sql) ) 
 sites.uniq <- sites.uniq[, !duplicated(colnames(sites.uniq))]
 
